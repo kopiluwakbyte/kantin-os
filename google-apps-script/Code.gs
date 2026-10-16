@@ -23,6 +23,18 @@
 // 1. GET: Mengambil Data Menu dan Pengaturan QRIS
 function doGet(e) {
   try {
+    const cache = CacheService.getScriptCache();
+    const bypassCache = e && e.parameter && e.parameter.nocache === "1";
+
+    // Cek cache untuk respon super cepat (< 1 detik)
+    if (!bypassCache) {
+      const cachedData = cache.get("kantin_menu_data");
+      if (cachedData) {
+        return ContentService.createTextOutput(cachedData)
+          .setMimeType(ContentService.MimeType.JSON);
+      }
+    }
+
     const ss = SpreadsheetApp.getActiveSpreadsheet();
     checkAndInitSheets(ss);
 
@@ -63,7 +75,13 @@ function doGet(e) {
       menu: menu
     };
 
-    return ContentService.createTextOutput(JSON.stringify(output))
+    const jsonOutput = JSON.stringify(output);
+    // Simpan di cache server selama 120 detik (2 menit)
+    try {
+      cache.put("kantin_menu_data", jsonOutput, 120);
+    } catch (cErr) {}
+
+    return ContentService.createTextOutput(jsonOutput)
       .setMimeType(ContentService.MimeType.JSON);
 
   } catch (error) {

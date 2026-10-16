@@ -51,33 +51,68 @@ function formatRupiah(num) {
   return "Rp " + Number(num || 0).toLocaleString("id-ID");
 }
 
-// 5. INISIALISASI & FETCH DATA DARI GOOGLE APPS SCRIPT
-async function initApp() {
-  // Load saved buyer name
+// 5. INISIALISASI INSTAN (0 DETIK) & BACKGROUND SYNC
+function initApp() {
+  // A. Load saved buyer name
   const savedName = localStorage.getItem("kantin_buyer_name");
   if (savedName) {
     const input = document.getElementById("buyerNameInput");
     if (input) input.value = savedName;
   }
 
-  // Coba fetch dari Google Sheets jika URL diisi
-  if (GAS_API_URL && GAS_API_URL.startsWith("http")) {
+  // B. INSTANT RENDER: Tampilkan dari cache localStorage atau default menu seketika (0 ms)
+  const cachedMenu = localStorage.getItem("kantin_cached_menu");
+  const cachedSettings = localStorage.getItem("kantin_cached_settings");
+
+  if (cachedMenu) {
     try {
-      const res = await fetch(GAS_API_URL);
-      const data = await res.json();
-      if (data.status === "success" && Array.isArray(data.menu) && data.menu.length > 0) {
-        allItems = data.menu;
-        if (data.settings) canteenSettings = { ...canteenSettings, ...data.settings };
-        updateSettingsUI();
+      const parsed = JSON.parse(cachedMenu);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        allItems = parsed;
       }
-    } catch (err) {
-      console.warn("Menggunakan data fallback lokal:", err);
-    }
+    } catch (e) {}
   }
 
+  if (cachedSettings) {
+    try {
+      canteenSettings = { ...canteenSettings, ...JSON.parse(cachedSettings) };
+    } catch (e) {}
+  }
+
+  // Tampilkan antarmuka langsung tanpa loading (0 delay!)
   setupEventListeners();
   renderCategories();
   renderItems();
+  updateSettingsUI();
+
+  // C. BACKGROUND SYNC (Non-blocking): Ambil data terbaru di latar belakang
+  syncDataFromGoogleSheets();
+}
+
+async function syncDataFromGoogleSheets() {
+  if (!GAS_API_URL || !GAS_API_URL.startsWith("http")) return;
+
+  try {
+    const res = await fetch(GAS_API_URL);
+    const data = await res.json();
+    if (data.status === "success" && Array.isArray(data.menu) && data.menu.length > 0) {
+      allItems = data.menu;
+      if (data.settings) {
+        canteenSettings = { ...canteenSettings, ...data.settings };
+        localStorage.setItem("kantin_cached_settings", JSON.stringify(canteenSettings));
+        updateSettingsUI();
+      }
+
+      // Perbarui cache browser untuk kunjungan berikutnya
+      localStorage.setItem("kantin_cached_menu", JSON.stringify(allItems));
+
+      // Refresh tampilan dengan data terbaru dari Google Sheets
+      renderCategories();
+      renderItems();
+    }
+  } catch (err) {
+    console.warn("Sinkronisasi latar belakang menggunakan cache lokal:", err);
+  }
 }
 
 function updateSettingsUI() {
